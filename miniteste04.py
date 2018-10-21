@@ -2,53 +2,45 @@
 #!/usr/bin/env python
 import simpy as SimPy
 from random import uniform, seed, randint
+import random
 import itertools
 
-ambiente = SimPy.Environment()
-servico = SimPy.PriorityResource(ambiente, capacity=1)
-status = ''
+TEMPO_MEDIO_CHEGADAS = 1.0              # tempo médio entre chegadas sucessivas de clientes
+TEMPO_MEDIO_ATENDIMENTO = 0.5           # tempo médio de atendimento no servidor
+OCUPADO = False                         # estado do recurso
 
 def main():
-    status = 'Livre'
-    ambiente.process(gera_cliente(status))
-    #ambiente.process(recebe_clinte())
-    #ambiente.process(atende_cliente())
-    #ambiente.process(termina_servico())
+    random.seed(25)                                 # semente do gerador de números aleatórios
+    ambiente = SimPy.Environment()                  # cria o ambiente do modelo
+    servidorRes = SimPy.Resource(ambiente, capacity=1)   # cria o recurso servidorRes
+    ambiente.process(gera_cliente(ambiente, servidorRes))             # incia processo de geração de chegadas
 
-    print('Simulação iniciada')
-    ambiente.run(until=100)
-    print('Simulação completa')
+    ambiente.run(until=5)                                # executa o modelo por 5 min
 
-def gera_cliente(status):
+
+def gera_cliente(ambiente,servidorRes):
+    contaChegada = 0
     while True:
-        PRIORIDADE_ALTA = 1
+        yield ambiente.timeout(random.expovariate(1.0/TEMPO_MEDIO_CHEGADAS))
+        contaChegada += 1
+        print('TEMPO[%.1f]: Chegada do cliente %d' % (ambiente.now, contaChegada))
 
-        cliente = (id, classe) =  'Cliente %s' % randint(1,1000), randint(1,2)
+        # inicia o processo de atendimento
+        ambiente.process(atende_cliente(ambiente, "cliente %d" % contaChegada, servidorRes))
 
-        proxima_entrada = 0
+def atende_cliente(ambiente,nome,servidorRes):
+    # função que ocupa o servidor e realiza o atendimento
+    # solicita o recurso servidorRes
+    with servidorRes.request() as request:
+        # aguarda em fila até a liberação do recurso e o ocupa
+        yield request
+        OCUPADO = True
+        print('TEMPO[%.1f]: Servidor inicia o atendimento do %s' % (ambiente.now, nome))
 
-        if (cliente[1] == PRIORIDADE_ALTA):
-            proxima_entrada = uniform(1,10)
-        else:
-            proxima_entrada = uniform(1,5)
-
-        if (status == 'Livre'):
-            yield ambiente.process(atende_cliente(cliente))
-        else:
-            yield ambiente.process(enfileira_cliente(cliente))
-
-        yield ambiente.timeout(proxima_entrada)
-        print('[%.3f] Próxima entrada escalonada para daqui a %.2f ts' % (ambiente.now, proxima_entrada))
-
-def atende_cliente(cliente):
-    print('[%.3f] %s sendo atendido' % (ambiente.now, cliente[0]))
-    tempo_atendimento = uniform(5,10)
-    yield ambiente.timeout(tempo_atendimento)
-    print('[%.3f] %s atendido em %.2f tps' % (ambiente.now, cliente[0], tempo_atendimento))
-
-def enfileira_cliente(cliente):
-    print('[%.3f] Servidor ocupado. %s enfileirado.' % (ambiente.now, cliente[0]))
-
+        # aguarda um tempo de atendimento exponencialmente distribuído
+        yield ambiente.timeout(random.expovariate(1.0/TEMPO_MEDIO_ATENDIMENTO))
+        OCUPADO = False
+        print('TEMPO[%.1f]: Servidor termina o atendimento do %s. Clientes em fila: %i' % (ambiente.now, nome, len(servidorRes.queue)))
 
 def termina_servico():
     if not servico.queue:
